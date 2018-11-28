@@ -5,6 +5,7 @@
 # @version 0.0.1
 # @
 
+import os
 import sys
 from pyqtgraph.Qt import QtGui
 import SoundEffectorModel
