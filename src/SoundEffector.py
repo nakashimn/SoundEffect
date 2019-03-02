@@ -5,7 +5,7 @@
 # @version 0.0.1
 # @
 
-import os
+# import os
 import sys
 from pyqtgraph.Qt import QtGui
 import SoundEffectorModel
@@ -20,5 +20,6 @@ if __name__ == "__main__":
     try:
         view.show()
         sys.exit(app.exec_())
-    except:
+    except Exception as e:
+        print("Error: {}".format(e.argv[1]))
         model.delete()

@@ -5,6 +5,7 @@
 # @version 0.0.1
 # @
 
+
 class SoundEffectController:
     def __init__(self, model, view):
         pass

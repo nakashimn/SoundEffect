@@ -8,12 +8,12 @@
 # @cond
 # -*- coding:utf-8 -*-
 # @endcond
-import sys
 import numpy as np
 from scipy import signal
 import pyaudio
-import wave
-from time import sleep
+# import wave
+# from time import sleep
+
 
 ## Model
 # @brief 信号処理用クラス
@@ -27,8 +27,8 @@ class SoundEffectorModel:
         self.RATE = 44100
         self.CHUNK = 1024
         self.MONORALRIGHT = True
-        self.BUFFERSIZE = 2*self.CHUNK
-        self.ANALYZEDSIZE = 8*self.CHUNK
+        self.BUFFERSIZE = 2 * self.CHUNK
+        self.ANALYZEDSIZE = 8 * self.CHUNK
         self.MAXLEVEL = 32768.0
         self.HANNINGWINDOW = np.hanning(self.ANALYZEDSIZE)
         self.HAMMINGWINDOW = np.hamming(self.ANALYZEDSIZE)
@@ -42,26 +42,26 @@ class SoundEffectorModel:
         self.cepstrum = np.empty(self.ANALYZEDSIZE)
         self.phase = np.empty(self.BUFFERSIZE)
 
-        """ 信号処理用変数 """
-        self.amp_pre_booster = 6
-        self.amp_post_booster = 4
-        self.threshold_distortion = 0.2*self.MAXLEVEL
+        """ エフェクト用変数 """
+        self.pre_booster_on = 1
+        self.pre_booster_amp = 1
+        self.distortion_on = 0
+        self.distortion_thresh = 20
+        self.post_booster_on = 0
+        self.post_booster_amp = 1
+        self.phaser_on = 0
+
+        """ 内部処理用変数 """
         self.shift_phaser = 0.5
         self.whole_counter = 0
 
-        """ エフェクト有効化フラグ """
-        self.pre_booster_on = 1
-        self.distortion_on = 0
-        self.post_booster_on = 0
-        self.phaser_on = 0
-
         """ 音声入出力用インスタンス """
         self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format = self.FORMAT,
-            		              channels = self.CHANNELS,
-            		              rate = self.RATE,
-                                  input = True,
-            		              output = True)
+        self.stream = self.p.open(format=self.FORMAT,
+                                  channels=self.CHANNELS,
+                                  rate=self.RATE,
+                                  input=True,
+                                  output=True)
 
     ## デストラクタ
     # @brief インスタンス削除関数を呼び出します
@@ -91,7 +91,7 @@ class SoundEffectorModel:
     # @param data_str pyaudioの入力音信号(str型)
     # @return data_float pyaudioの入力音信号(-1～1に正規化されたfloat型)
     def toNormalizedFloat(self, data_str):
-        data_float = np.frombuffer(data_str, "float")/self.MAXLEVEL
+        data_float = np.frombuffer(data_str, "float") / self.MAXLEVEL
         return data_float
 
     """ ステレオ(左側)→モノラル """
@@ -118,7 +118,7 @@ class SoundEffectorModel:
     # @param input pyaudioの出力音信号(モノラル)
     # @return output pyaudioの出力音信号(ステレオ)
     def toStereo(self, input):
-        output = np.concatenate(np.array([input,input]).T)
+        output = np.concatenate(np.array([input, input]).T)
         return output
 
     """ 処理済データの変換(INT16→文字列) """
@@ -134,7 +134,7 @@ class SoundEffectorModel:
     # @param data_int16 pyaudioの出力音信号(float型)
     # @return data_str pyaudioの出力音信号(str型)
     def toDenormalizedStr(self, data_float):
-        data_str = np.frombuffer(np.array(data_float)*32768.0, "S1")
+        data_str = np.frombuffer(np.array(data_float) * 32768.0, "S1")
         return data_str
 
     """ -----------------------------------------------------------------------
@@ -149,11 +149,12 @@ class SoundEffectorModel:
         # 時間領域の変調処理
         effected = input
         if self.pre_booster_on == 1:
-            effected = self.booster(effected, self.amp_pre_booster)
+            effected = self.booster(effected, self.pre_booster_amp)
         if self.distortion_on == 1:
-            effected = self.distortion(effected, self.threshold_distortion)
+            distortion_thresh = self.distortion_thresh / 100 * self.MAXLEVEL
+            effected = self.distortion(effected, distortion_thresh)
         if self.post_booster_on == 1:
-            effected = self.booster(effected, self.amp_post_booster)
+            effected = self.booster(effected, self.post_booster_amp)
 
 #        self.bufferdata = self.pushData(effected,self.bufferdata)
 
@@ -186,23 +187,18 @@ class SoundEffectorModel:
     # @param amp 倍率
     # @return output 出力音信号
     def booster(self, input, amp):
-        return input*amp
+        return input * amp
 
-    ## ディスト―ション
+    ## ディストーション
     # @brief 音に歪みを加えます
     # @param input 入力音信号
     # @param threshold 音量の閾値
     # @return output 出力音信号
     def distortion(self, input, threshold):
-        effected = []
-        for i in range(len(input)):
-            if input[i] > threshold:
-                effected.append(threshold)
-            elif input[i] < -threshold:
-                effected.append(-threshold)
-            else:
-                effected.append(input[i])
-        return np.array(effected,dtype="int16")
+        effected = input.copy()
+        effected[input > threshold] = threshold
+        effected[input < -threshold] = -threshold
+        return effected
 
     ## フェーザー
     # @brief 位相を操作したエフェクトをかけます
@@ -214,11 +210,11 @@ class SoundEffectorModel:
         spectrum = np.fft.fft(effected)
         amp = self.calcAmpSpectrum(spectrum)
         phase = self.calcPhaseSpectrum(spectrum)
-        shifter = np.pi*shift*200*np.linspace(0,1,effected.shape[0]/2+1)
-        shifter = np.delete(shifter,-1)
-        shifter = np.concatenate([shifter, np.pi*shift*200*np.linspace(1,0,effected.shape[0]/2+1)])
-        shifter = np.delete(shifter,-1)
-        phase_shifted = phase + np.mod(shifter,np.pi)
+        shifter = np.pi * shift * 200 * np.linspace(0, 1, effected.shape[0] / 2 + 1)
+        shifter = np.delete(shifter, -1)
+        shifter = np.concatenate([shifter, np.pi * shift * 200 * np.linspace(1, 0, effected.shape[0] / 2 + 1)])
+        shifter = np.delete(shifter, -1)
+        phase_shifted = phase + np.mod(shifter, np.pi)
         spectrum = self.restoreSpectrum(amp, phase_shifted)
         modulated = self.ifft(spectrum) / 2
         output = original + modulated
@@ -266,7 +262,7 @@ class SoundEffectorModel:
     # @param window 窓関数
     # @return spectrum 出力配列(スペクトラム)
     def fft(self, input, window):
-        windowed = window*input
+        windowed = window * input
         spectrum = np.fft.fft(windowed)
         return spectrum
 
@@ -322,7 +318,7 @@ class SoundEffectorModel:
     # @param spectrum 出力配列(スペクトラム)
     # @return cepstrum 出力配列(ケプストラム)
     def makeCepstrum(self, spectrum):
-        logspectrum = 20*np.log10(spectrum)
+        logspectrum = 20 * np.log10(spectrum+0.0001)
         cepstrum = np.real(np.fft.ifft(logspectrum))
         return cepstrum
 
@@ -331,7 +327,7 @@ class SoundEffectorModel:
     # @param input 出力配列(音信号)
     # @return output 出力配列(フィルタ処理後信号)
     def preEmphasis(self, input):
-        output = signal.lfilter([1,-0.97], 1, input)
+        output = signal.lfilter([1, -0.97], 1, input)
         return output
     """ -----------------------------------------------------------------------
         Main function
@@ -352,8 +348,8 @@ class SoundEffectorModel:
         """ Processing """
 
         """ Plot Data """
-        self.analyzeddata = self.pushData(processed_data,self.analyzeddata)
-        self.plotdata = processed_data/self.MAXLEVEL
+        self.analyzeddata = self.pushData(processed_data, self.analyzeddata)
+        self.plotdata = processed_data / self.MAXLEVEL
         self.spectrum = self.fft(self.analyzeddata, self.HANNINGWINDOW)
         self.power = self.calcPowerSpectrum(self.spectrum)
         self.cepstrum = self.makeCepstrum(self.power)
