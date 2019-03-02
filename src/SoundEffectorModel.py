@@ -318,7 +318,7 @@ class SoundEffectorModel:
     # @param spectrum 出力配列(スペクトラム)
     # @return cepstrum 出力配列(ケプストラム)
     def makeCepstrum(self, spectrum):
-        logspectrum = 20 * np.log10(spectrum+0.0001)
+        logspectrum = 20 * np.log10(spectrum + 0.0001)
         cepstrum = np.real(np.fft.ifft(logspectrum))
         return cepstrum
 
